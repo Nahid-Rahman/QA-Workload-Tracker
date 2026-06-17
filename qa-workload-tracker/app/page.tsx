@@ -210,6 +210,8 @@ export default function Home() {
   const [unavailableDraft, setUnavailableDraft] = useState<Unavailable>({ id: "", date: todayString(), memberId: "all", type: "Public Holiday", hours: 6, reason: "" });
   const [memberDraft, setMemberDraft] = useState<Member>({ id: "", name: "", role: "QA", dailyCapacity: 6, skills: ["Manual QA"], status: "Active" });
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingAllocationId, setEditingAllocationId] = useState<string | null>(null);
   const [urgent, setUrgent] = useState<UrgentInput>({ name: "Urgent release retest", workType: "Bug Retest", requiredSkill: "Manual QA", estimatedHours: 6, deadline: addDays(todayString(), 1), priority: "Critical", preferredMemberId: "" });
   const [configDrafts, setConfigDrafts] = useState<Record<ConfigKey, string>>({ modules: "", workTypes: "", skills: "", statuses: "", priorities: "", unavailableTypes: "", blockerTypes: "" });
 
@@ -295,12 +297,55 @@ export default function Home() {
 
   const filteredTasks = tasks.filter((task) => taskStatusFilter === "All" || task.status === taskStatusFilter);
 
+  function newTaskDraft(): Task {
+    return {
+      id: "",
+      name: "",
+      module: firstValue(safeConfig, "modules", "HRIS"),
+      workType: firstValue(safeConfig, "workTypes", "Manual Testing"),
+      requiredSkill: firstValue(safeConfig, "skills", "Manual QA"),
+      assignedTo: activeMembers[0]?.id ?? members[0]?.id ?? "",
+      priority: firstValue(safeConfig, "priorities", "Medium"),
+      status: firstValue(safeConfig, "statuses", "Not Started"),
+      startDate: todayString(),
+      dueDate: addDays(todayString(), 2),
+      estimatedHours: 4,
+      adjustedRemaining: undefined,
+      blocked: false,
+      blockerType: "",
+      blockerNote: "",
+      blockedSince: "",
+      notes: "",
+    };
+  }
+
+  function resetTaskForm() {
+    setEditingTaskId(null);
+    setTaskDraft(newTaskDraft());
+  }
+
   function addTask() {
     if (!taskDraft.name.trim()) return;
     const nextNumber = String(tasks.length + 1).padStart(3, "0");
     const newTask = { ...taskDraft, id: taskDraft.id.trim() || `T-${nextNumber}`, name: taskDraft.name.trim(), blocked: taskDraft.status === "Blocked" || taskDraft.blocked };
     setTasks([newTask, ...tasks]);
-    setTaskDraft({ ...taskDraft, id: "", name: "", notes: "", status: firstValue(safeConfig, "statuses", "Not Started"), estimatedHours: 4, adjustedRemaining: undefined, blocked: false, blockerType: "", blockerNote: "", blockedSince: "" });
+    resetTaskForm();
+  }
+
+  function startEditTask(task: Task) {
+    setEditingTaskId(task.id);
+    setTaskDraft({ ...task });
+  }
+
+  function saveTask() {
+    if (!editingTaskId || !taskDraft.name.trim()) return;
+    setTasks(tasks.map((task) => task.id === editingTaskId ? {
+      ...taskDraft,
+      id: editingTaskId,
+      name: taskDraft.name.trim(),
+      blocked: taskDraft.status === "Blocked" || taskDraft.blocked,
+    } : task));
+    resetTaskForm();
   }
 
   function updateTaskStatus(taskId: string, status: string) {
@@ -313,12 +358,55 @@ export default function Home() {
       blockerNote: shouldBlock ? task.blockerNote : "",
       blockedSince: shouldBlock ? task.blockedSince || todayString() : "",
     } : task));
+    if (editingTaskId === taskId) {
+      setTaskDraft({
+        ...taskDraft,
+        status,
+        blocked: shouldBlock,
+        blockerType: shouldBlock ? taskDraft.blockerType : "",
+        blockerNote: shouldBlock ? taskDraft.blockerNote : "",
+        blockedSince: shouldBlock ? taskDraft.blockedSince || todayString() : "",
+      });
+    }
+  }
+
+  function newAllocationDraft(): Allocation {
+    return {
+      id: "",
+      date: todayString(),
+      memberId: activeMembers[0]?.id ?? members[0]?.id ?? "",
+      taskId: tasks[0]?.id ?? "",
+      plannedHours: 1,
+      actualHours: undefined,
+      note: "",
+    };
+  }
+
+  function resetAllocationForm() {
+    setEditingAllocationId(null);
+    setAllocationDraft(newAllocationDraft());
   }
 
   function addAllocation() {
     if (!allocationDraft.taskId || !allocationDraft.memberId) return;
     setAllocations([{ ...allocationDraft, id: uid("A") }, ...allocations]);
-    setAllocationDraft({ ...allocationDraft, plannedHours: 1, actualHours: undefined, note: "" });
+    resetAllocationForm();
+  }
+
+  function startEditAllocation(item: Allocation) {
+    setEditingAllocationId(item.id);
+    setAllocationDraft({ ...item });
+  }
+
+  function saveAllocation() {
+    if (!editingAllocationId || !allocationDraft.taskId || !allocationDraft.memberId) return;
+    setAllocations(allocations.map((item) => item.id === editingAllocationId ? { ...allocationDraft, id: editingAllocationId } : item));
+    resetAllocationForm();
+  }
+
+  function removeAllocation(allocationId: string) {
+    setAllocations(allocations.filter((item) => item.id !== allocationId));
+    if (editingAllocationId === allocationId) resetAllocationForm();
   }
 
   function addUnavailable() {
@@ -515,47 +603,60 @@ export default function Home() {
         )}
 
         {tab === "Tasks" && (
-          <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
-            <Card title="Add task" subtitle="Lead can create work items here.">
+          <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
+            <Card title={editingTaskId ? "Edit task" : "Add task"} subtitle={editingTaskId ? "Update task details. Existing allocations will continue to follow this task ID." : "Lead can create work items here."}>
               <div className="space-y-3">
+                <label className="text-sm font-medium">Task ID<input className={inputClass} placeholder="Auto if blank, e.g., T-005" value={taskDraft.id} disabled={Boolean(editingTaskId)} onChange={(event) => setTaskDraft({ ...taskDraft, id: event.target.value })} /></label>
                 <input className={inputClass} placeholder="Task name" value={taskDraft.name} onChange={(event) => setTaskDraft({ ...taskDraft, name: event.target.value })} />
                 <div className="grid grid-cols-2 gap-3"><Select label="Module" value={taskDraft.module} options={safeConfig.modules} onChange={(value) => setTaskDraft({ ...taskDraft, module: value })} /><Select label="Work type" value={taskDraft.workType} options={safeConfig.workTypes} onChange={(value) => setTaskDraft({ ...taskDraft, workType: value })} /></div>
                 <div className="grid grid-cols-2 gap-3"><Select label="Skill" value={taskDraft.requiredSkill} options={safeConfig.skills} onChange={(value) => setTaskDraft({ ...taskDraft, requiredSkill: value })} /><Select label="Assigned QA" value={taskDraft.assignedTo} options={activeMembers.map((m) => m.id)} optionLabel={memberName} onChange={(value) => setTaskDraft({ ...taskDraft, assignedTo: value })} /></div>
-                <div className="grid grid-cols-2 gap-3"><Select label="Priority" value={taskDraft.priority} options={safeConfig.priorities} onChange={(value) => setTaskDraft({ ...taskDraft, priority: value })} /><Select label="Status" value={taskDraft.status} options={safeConfig.statuses} onChange={(value) => setTaskDraft({ ...taskDraft, status: value, blocked: value === "Blocked" ? true : taskDraft.blocked })} /></div>
+                <div className="grid grid-cols-2 gap-3"><Select label="Priority" value={taskDraft.priority} options={safeConfig.priorities} onChange={(value) => setTaskDraft({ ...taskDraft, priority: value })} /><Select label="Status" value={taskDraft.status} options={safeConfig.statuses} onChange={(value) => setTaskDraft({ ...taskDraft, status: value, blocked: value === "Blocked" || value.includes("Waiting") ? true : taskDraft.blocked })} /></div>
                 <div className="grid grid-cols-2 gap-3"><label className="text-sm font-medium">Start date<input type="date" className={inputClass} value={taskDraft.startDate} onChange={(event) => setTaskDraft({ ...taskDraft, startDate: event.target.value })} /></label><label className="text-sm font-medium">Due date<input type="date" className={inputClass} value={taskDraft.dueDate} onChange={(event) => setTaskDraft({ ...taskDraft, dueDate: event.target.value })} /></label></div>
-                <label className="text-sm font-medium">Estimated hours<input type="number" min={0} className={inputClass} value={taskDraft.estimatedHours} onChange={(event) => setTaskDraft({ ...taskDraft, estimatedHours: Number(event.target.value) })} /></label>
+                <div className="grid grid-cols-2 gap-3"><label className="text-sm font-medium">Estimated hours<input type="number" min={0} step="0.5" className={inputClass} value={taskDraft.estimatedHours} onChange={(event) => setTaskDraft({ ...taskDraft, estimatedHours: Number(event.target.value) })} /></label><label className="text-sm font-medium">Adjusted remaining<input type="number" min={0} step="0.5" className={inputClass} value={taskDraft.adjustedRemaining ?? ""} onChange={(event) => setTaskDraft({ ...taskDraft, adjustedRemaining: event.target.value === "" ? undefined : Number(event.target.value) })} /></label></div>
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={taskDraft.blocked} onChange={(event) => setTaskDraft({ ...taskDraft, blocked: event.target.checked })} /> Blocked?</label>
                 {taskDraft.blocked && <div className="space-y-3"><Select label="Blocker type" value={taskDraft.blockerType} options={safeConfig.blockerTypes} onChange={(value) => setTaskDraft({ ...taskDraft, blockerType: value })} /><input className={inputClass} placeholder="Blocker note" value={taskDraft.blockerNote} onChange={(event) => setTaskDraft({ ...taskDraft, blockerNote: event.target.value })} /><label className="text-sm font-medium">Blocked since<input type="date" className={inputClass} value={taskDraft.blockedSince} onChange={(event) => setTaskDraft({ ...taskDraft, blockedSince: event.target.value })} /></label></div>}
-                <button className={buttonClass} onClick={addTask}>Add task</button>
+                <textarea className={inputClass} placeholder="Task notes" value={taskDraft.notes} onChange={(event) => setTaskDraft({ ...taskDraft, notes: event.target.value })} />
+                <div className="flex flex-wrap gap-2">
+                  <button className={buttonClass} onClick={editingTaskId ? saveTask : addTask}>{editingTaskId ? "Save task" : "Add task"}</button>
+                  {editingTaskId && <button className={subtleButtonClass} onClick={resetTaskForm}>Cancel edit</button>}
+                </div>
               </div>
             </Card>
-            <Card title="Task list" subtitle="Update status directly from the table. Use filter to focus on a specific status.">
+            <Card title="Task list" subtitle="Edit task details, update status, or filter by status.">
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div className="max-w-xs flex-1"><Select label="Filter by status" value={taskStatusFilter} options={["All", ...safeConfig.statuses]} onChange={setTaskStatusFilter} /></div>
                 <p className="text-sm text-slate-500">Showing <strong>{filteredTasks.length}</strong> of <strong>{tasks.length}</strong> tasks</p>
               </div>
-              <div className="table-scroll"><table className="w-full min-w-[1080px] text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="py-3">ID</th><th>Task</th><th>Assigned</th><th>Priority</th><th>Status</th><th>Due</th><th>Remaining</th><th>Risk</th><th></th></tr></thead><tbody>{filteredTasks.map((task) => <tr key={task.id} className="border-b border-slate-100"><td className="py-3 font-semibold">{task.id}</td><td>{task.name}<br /><span className="text-xs text-slate-500">{task.module} • {task.workType}</span></td><td>{memberName(task.assignedTo)}</td><td><span className={`rounded-full px-2 py-1 text-xs ${priorityColor(task.priority)}`}>{task.priority}</span></td><td><select className={`rounded-xl px-2 py-1 text-xs font-semibold outline-none ${statusColor(task.status)}`} value={task.status} onChange={(event) => updateTaskStatus(task.id, event.target.value)}>{safeConfig.statuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></td><td>{task.dueDate}</td><td>{remainingFor(task)}h</td><td>{deadlineRisk(task)}</td><td><button className="text-red-600" onClick={() => setTasks(tasks.filter((item) => item.id !== task.id))}>Remove</button></td></tr>)}</tbody></table></div>
+              <div className="table-scroll"><table className="w-full min-w-[1180px] text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="py-3">ID</th><th>Task</th><th>Assigned</th><th>Priority</th><th>Status</th><th>Due</th><th>Remaining</th><th>Risk</th><th>Actions</th></tr></thead><tbody>{filteredTasks.map((task) => <tr key={task.id} className="border-b border-slate-100"><td className="py-3 font-semibold">{task.id}</td><td>{task.name}<br /><span className="text-xs text-slate-500">{task.module} • {task.workType}</span></td><td>{memberName(task.assignedTo)}</td><td><span className={`rounded-full px-2 py-1 text-xs ${priorityColor(task.priority)}`}>{task.priority}</span></td><td><select className={`rounded-xl px-2 py-1 text-xs font-semibold outline-none ${statusColor(task.status)}`} value={task.status} onChange={(event) => updateTaskStatus(task.id, event.target.value)}>{safeConfig.statuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></td><td>{task.dueDate}</td><td>{remainingFor(task)}h</td><td>{deadlineRisk(task)}</td><td><div className="flex flex-wrap gap-2"><button className="font-semibold text-emerald-700 hover:text-emerald-900" onClick={() => startEditTask(task)}>Edit</button><button className="font-semibold text-red-600 hover:text-red-800" onClick={() => setTasks(tasks.filter((item) => item.id !== task.id))}>Remove</button></div></td></tr>)}</tbody></table></div>
             </Card>
           </div>
         )}
 
         {tab === "Daily Allocation" && (
-          <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
-            <Card title="Add daily update" subtitle="Each QA can add planned and actual hours once daily; urgent updates can be added anytime.">
+          <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
+            <Card title={editingAllocationId ? "Edit daily update" : "Add daily update"} subtitle={editingAllocationId ? "Update planned/actual hours or note for this allocation row." : "Each QA can add planned and actual hours once daily; urgent updates can be added anytime."}>
               <div className="space-y-3">
                 <label className="text-sm font-medium">Date<input type="date" className={inputClass} value={allocationDraft.date} onChange={(event) => setAllocationDraft({ ...allocationDraft, date: event.target.value })} /></label>
                 <Select label="Member" value={allocationDraft.memberId} options={activeMembers.map((m) => m.id)} optionLabel={memberName} onChange={(value) => setAllocationDraft({ ...allocationDraft, memberId: value })} />
                 <Select label="Task" value={allocationDraft.taskId} options={tasks.map((task) => task.id)} optionLabel={(id) => `${id} | ${taskName(id)}`} onChange={(value) => setAllocationDraft({ ...allocationDraft, taskId: value })} />
                 <div className="grid grid-cols-2 gap-3"><label className="text-sm font-medium">Planned hours<input type="number" min={0} step="0.5" className={inputClass} value={allocationDraft.plannedHours} onChange={(event) => setAllocationDraft({ ...allocationDraft, plannedHours: Number(event.target.value) })} /></label><label className="text-sm font-medium">Actual hours<input type="number" min={0} step="0.5" className={inputClass} value={allocationDraft.actualHours ?? ""} onChange={(event) => setAllocationDraft({ ...allocationDraft, actualHours: event.target.value === "" ? undefined : Number(event.target.value) })} /></label></div>
                 <textarea className={inputClass} placeholder="Update note" value={allocationDraft.note} onChange={(event) => setAllocationDraft({ ...allocationDraft, note: event.target.value })} />
-                <button className={buttonClass} onClick={addAllocation}>Add update</button>
+                <div className="flex flex-wrap gap-2">
+                  <button className={buttonClass} onClick={editingAllocationId ? saveAllocation : addAllocation}>{editingAllocationId ? "Save update" : "Add update"}</button>
+                  {editingAllocationId && <button className={subtleButtonClass} onClick={resetAllocationForm}>Cancel edit</button>}
+                </div>
               </div>
             </Card>
-            <Card title="Daily allocation history" subtitle="Latest rows first.">
-              <SimpleTable headers={["Date", "Member", "Task", "Planned", "Actual", "Variance", "Note"]} rows={allocations.map((item) => {
-                const variance = item.actualHours === undefined ? "Not Updated" : `${item.actualHours - item.plannedHours}h`;
-                return [item.date, memberName(item.memberId), taskName(item.taskId), `${item.plannedHours}h`, item.actualHours === undefined ? "-" : `${item.actualHours}h`, variance, item.note || "-"];
-              })} />
+            <Card title="Daily allocation history" subtitle="Latest rows first. Use Edit to correct planned/actual hours or notes.">
+              <div className="table-scroll">
+                <table className="w-full min-w-[940px] text-left text-sm">
+                  <thead><tr className="border-b text-slate-500"><th className="py-3 pr-4">Date</th><th className="pr-4">Member</th><th className="pr-4">Task</th><th className="pr-4">Planned</th><th className="pr-4">Actual</th><th className="pr-4">Variance</th><th className="pr-4">Note</th><th className="pr-4">Actions</th></tr></thead>
+                  <tbody>{allocations.map((item) => {
+                    const variance = item.actualHours === undefined ? "Not Updated" : `${item.actualHours - item.plannedHours}h`;
+                    return <tr key={item.id} className="border-b border-slate-100"><td className="py-3 pr-4 text-slate-700">{item.date}</td><td className="pr-4 text-slate-700">{memberName(item.memberId)}</td><td className="pr-4 text-slate-700">{taskName(item.taskId)}</td><td className="pr-4 text-slate-700">{item.plannedHours}h</td><td className="pr-4 text-slate-700">{item.actualHours === undefined ? "-" : `${item.actualHours}h`}</td><td className="pr-4 text-slate-700">{variance}</td><td className="pr-4 text-slate-700">{item.note || "-"}</td><td className="pr-4"><div className="flex flex-wrap gap-2"><button className="font-semibold text-emerald-700 hover:text-emerald-900" onClick={() => startEditAllocation(item)}>Edit</button><button className="font-semibold text-red-600 hover:text-red-800" onClick={() => removeAllocation(item.id)}>Remove</button></div></td></tr>;
+                  })}</tbody>
+                </table>
+              </div>
             </Card>
           </div>
         )}
