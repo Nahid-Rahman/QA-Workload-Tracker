@@ -41,6 +41,17 @@ type Allocation = {
   note: string;
 };
 
+type BulkAllocationDraft = {
+  startDate: string;
+  endDate: string;
+  memberId: string;
+  taskId: string;
+  plannedHours: number;
+  note: string;
+  skipFriday: boolean;
+  skipUnavailable: boolean;
+};
+
 type Unavailable = {
   id: string;
   date: string;
@@ -207,6 +218,7 @@ export default function Home() {
   const [taskStatusFilter, setTaskStatusFilter] = useState("All");
   const [taskDraft, setTaskDraft] = useState<Task>({ id: "", name: "", module: "HRIS", workType: "Manual Testing", requiredSkill: "Manual QA", assignedTo: "nahid", priority: "Medium", status: "Not Started", startDate: todayString(), dueDate: addDays(todayString(), 2), estimatedHours: 4, adjustedRemaining: undefined, blocked: false, blockerType: "", blockerNote: "", blockedSince: "", notes: "" });
   const [allocationDraft, setAllocationDraft] = useState<Allocation>({ id: "", date: todayString(), memberId: "nahid", taskId: "T-001", plannedHours: 1, actualHours: undefined, note: "" });
+  const [bulkAllocationDraft, setBulkAllocationDraft] = useState<BulkAllocationDraft>({ startDate: todayString(), endDate: addDays(todayString(), 9), memberId: "nahid", taskId: "T-001", plannedHours: 3, note: "Repeated plan", skipFriday: true, skipUnavailable: true });
   const [unavailableDraft, setUnavailableDraft] = useState<Unavailable>({ id: "", date: todayString(), memberId: "all", type: "Public Holiday", hours: 6, reason: "" });
   const [memberDraft, setMemberDraft] = useState<Member>({ id: "", name: "", role: "QA", dailyCapacity: 6, skills: ["Manual QA"], status: "Active" });
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
@@ -387,10 +399,57 @@ export default function Home() {
     setAllocationDraft(newAllocationDraft());
   }
 
+  function datesBetweenInclusive(start: string, end: string) {
+    const totalDays = Math.max(0, Math.min(90, daysBetween(start, end)));
+    return Array.from({ length: totalDays + 1 }, (_, index) => addDays(start, index));
+  }
+
+  function bulkAllocationDates() {
+    const member = members.find((item) => item.id === bulkAllocationDraft.memberId);
+    if (!member || !bulkAllocationDraft.startDate || !bulkAllocationDraft.endDate || bulkAllocationDraft.endDate < bulkAllocationDraft.startDate) return [];
+    return datesBetweenInclusive(bulkAllocationDraft.startDate, bulkAllocationDraft.endDate).filter((date) => {
+      if (bulkAllocationDraft.skipFriday && isFriday(date)) return false;
+      if (bulkAllocationDraft.skipUnavailable && capacityFor(member, date) <= 0) return false;
+      return true;
+    });
+  }
+
   function addAllocation() {
     if (!allocationDraft.taskId || !allocationDraft.memberId) return;
     setAllocations([{ ...allocationDraft, id: uid("A") }, ...allocations]);
     resetAllocationForm();
+  }
+
+  function addBulkAllocations() {
+    if (!bulkAllocationDraft.taskId || !bulkAllocationDraft.memberId || bulkAllocationDraft.plannedHours <= 0) return;
+    const dates = bulkAllocationDates();
+    if (!dates.length) return;
+
+    const generatedRows = dates.map((date) => ({
+      id: uid("A"),
+      date,
+      memberId: bulkAllocationDraft.memberId,
+      taskId: bulkAllocationDraft.taskId,
+      plannedHours: bulkAllocationDraft.plannedHours,
+      actualHours: undefined,
+      note: bulkAllocationDraft.note,
+    }));
+
+    const generatedByKey = new Map(generatedRows.map((row) => [`${row.date}|${row.memberId}|${row.taskId}`, row]));
+    const updatedExisting = allocations.map((item) => {
+      const key = `${item.date}|${item.memberId}|${item.taskId}`;
+      const generated = generatedByKey.get(key);
+      if (!generated) return item;
+      generatedByKey.delete(key);
+      return {
+        ...item,
+        plannedHours: generated.plannedHours,
+        note: generated.note || item.note,
+      };
+    });
+
+    setAllocations([...Array.from(generatedByKey.values()), ...updatedExisting]);
+    setBulkAllocationDraft({ ...bulkAllocationDraft, startDate: addDays(bulkAllocationDraft.endDate, 1), endDate: addDays(bulkAllocationDraft.endDate, 10) });
   }
 
   function startEditAllocation(item: Allocation) {
@@ -634,19 +693,34 @@ export default function Home() {
 
         {tab === "Daily Allocation" && (
           <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
-            <Card title={editingAllocationId ? "Edit daily update" : "Add daily update"} subtitle={editingAllocationId ? "Update planned/actual hours or note for this allocation row." : "Each QA can add planned and actual hours once daily; urgent updates can be added anytime."}>
-              <div className="space-y-3">
-                <label className="text-sm font-medium">Date<input type="date" className={inputClass} value={allocationDraft.date} onChange={(event) => setAllocationDraft({ ...allocationDraft, date: event.target.value })} /></label>
-                <Select label="Member" value={allocationDraft.memberId} options={activeMembers.map((m) => m.id)} optionLabel={memberName} onChange={(value) => setAllocationDraft({ ...allocationDraft, memberId: value })} />
-                <Select label="Task" value={allocationDraft.taskId} options={tasks.map((task) => task.id)} optionLabel={(id) => `${id} | ${taskName(id)}`} onChange={(value) => setAllocationDraft({ ...allocationDraft, taskId: value })} />
-                <div className="grid grid-cols-2 gap-3"><label className="text-sm font-medium">Planned hours<input type="number" min={0} step="0.5" className={inputClass} value={allocationDraft.plannedHours} onChange={(event) => setAllocationDraft({ ...allocationDraft, plannedHours: Number(event.target.value) })} /></label><label className="text-sm font-medium">Actual hours<input type="number" min={0} step="0.5" className={inputClass} value={allocationDraft.actualHours ?? ""} onChange={(event) => setAllocationDraft({ ...allocationDraft, actualHours: event.target.value === "" ? undefined : Number(event.target.value) })} /></label></div>
-                <textarea className={inputClass} placeholder="Update note" value={allocationDraft.note} onChange={(event) => setAllocationDraft({ ...allocationDraft, note: event.target.value })} />
-                <div className="flex flex-wrap gap-2">
-                  <button className={buttonClass} onClick={editingAllocationId ? saveAllocation : addAllocation}>{editingAllocationId ? "Save update" : "Add update"}</button>
-                  {editingAllocationId && <button className={subtleButtonClass} onClick={resetAllocationForm}>Cancel edit</button>}
+            <div className="space-y-5">
+              <Card title={editingAllocationId ? "Edit daily update" : "Add daily update"} subtitle={editingAllocationId ? "Update planned/actual hours or note for this allocation row." : "Each QA can add planned and actual hours once daily; urgent updates can be added anytime."}>
+                <div className="space-y-3">
+                  <label className="text-sm font-medium">Date<input type="date" className={inputClass} value={allocationDraft.date} onChange={(event) => setAllocationDraft({ ...allocationDraft, date: event.target.value })} /></label>
+                  <Select label="Member" value={allocationDraft.memberId} options={activeMembers.map((m) => m.id)} optionLabel={memberName} onChange={(value) => setAllocationDraft({ ...allocationDraft, memberId: value })} />
+                  <Select label="Task" value={allocationDraft.taskId} options={tasks.map((task) => task.id)} optionLabel={(id) => `${id} | ${taskName(id)}`} onChange={(value) => setAllocationDraft({ ...allocationDraft, taskId: value })} />
+                  <div className="grid grid-cols-2 gap-3"><label className="text-sm font-medium">Planned hours<input type="number" min={0} step="0.5" className={inputClass} value={allocationDraft.plannedHours} onChange={(event) => setAllocationDraft({ ...allocationDraft, plannedHours: Number(event.target.value) })} /></label><label className="text-sm font-medium">Actual hours<input type="number" min={0} step="0.5" className={inputClass} value={allocationDraft.actualHours ?? ""} onChange={(event) => setAllocationDraft({ ...allocationDraft, actualHours: event.target.value === "" ? undefined : Number(event.target.value) })} /></label></div>
+                  <textarea className={inputClass} placeholder="Update note" value={allocationDraft.note} onChange={(event) => setAllocationDraft({ ...allocationDraft, note: event.target.value })} />
+                  <div className="flex flex-wrap gap-2">
+                    <button className={buttonClass} onClick={editingAllocationId ? saveAllocation : addAllocation}>{editingAllocationId ? "Save update" : "Add update"}</button>
+                    {editingAllocationId && <button className={subtleButtonClass} onClick={resetAllocationForm}>Cancel edit</button>}
+                  </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
+              <Card title="Bulk / repeat allocation" subtitle="Use this for long tasks like regression: e.g., 10 days × 3 hours/day. Existing same member-task-date rows are updated, not duplicated.">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3"><label className="text-sm font-medium">Start date<input type="date" className={inputClass} value={bulkAllocationDraft.startDate} onChange={(event) => setBulkAllocationDraft({ ...bulkAllocationDraft, startDate: event.target.value })} /></label><label className="text-sm font-medium">End date<input type="date" className={inputClass} value={bulkAllocationDraft.endDate} onChange={(event) => setBulkAllocationDraft({ ...bulkAllocationDraft, endDate: event.target.value })} /></label></div>
+                  <Select label="Member" value={bulkAllocationDraft.memberId} options={activeMembers.map((m) => m.id)} optionLabel={memberName} onChange={(value) => setBulkAllocationDraft({ ...bulkAllocationDraft, memberId: value })} />
+                  <Select label="Task" value={bulkAllocationDraft.taskId} options={tasks.map((task) => task.id)} optionLabel={(id) => `${id} | ${taskName(id)}`} onChange={(value) => setBulkAllocationDraft({ ...bulkAllocationDraft, taskId: value })} />
+                  <label className="text-sm font-medium">Planned hours per day<input type="number" min={0.5} step="0.5" className={inputClass} value={bulkAllocationDraft.plannedHours} onChange={(event) => setBulkAllocationDraft({ ...bulkAllocationDraft, plannedHours: Number(event.target.value) })} /></label>
+                  <textarea className={inputClass} placeholder="Note for all generated rows" value={bulkAllocationDraft.note} onChange={(event) => setBulkAllocationDraft({ ...bulkAllocationDraft, note: event.target.value })} />
+                  <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={bulkAllocationDraft.skipFriday} onChange={(event) => setBulkAllocationDraft({ ...bulkAllocationDraft, skipFriday: event.target.checked })} /> Skip Friday/weekend</label>
+                  <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={bulkAllocationDraft.skipUnavailable} onChange={(event) => setBulkAllocationDraft({ ...bulkAllocationDraft, skipUnavailable: event.target.checked })} /> Skip full unavailable/holiday days</label>
+                  <div className="rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-900">Will create/update <strong>{bulkAllocationDates().length}</strong> daily rows.</div>
+                  <button className={buttonClass} onClick={addBulkAllocations}>Add repeated plan</button>
+                </div>
+              </Card>
+            </div>
             <Card title="Daily allocation history" subtitle="Latest rows first. Use Edit to correct planned/actual hours or notes.">
               <div className="table-scroll">
                 <table className="w-full min-w-[940px] text-left text-sm">

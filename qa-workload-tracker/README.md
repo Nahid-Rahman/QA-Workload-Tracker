@@ -16,6 +16,7 @@ This MVP uses local browser storage. It works immediately after deployment witho
 - Inline task status update from task list
 - Status-wise task filter
 - Daily planned vs actual allocation
+- Bulk / repeat allocation for multi-day work such as regression testing
 - Leave, unavailability, and public holiday input
 - Blocked task tracker
 - Deadline risk list
