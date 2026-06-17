@@ -18,7 +18,7 @@ type Task = {
   workType: string;
   requiredSkill: string;
   assignedTo: string;
-  priority: "Critical" | "High" | "Medium" | "Low";
+  priority: string;
   status: string;
   startDate: string;
   dueDate: string;
@@ -56,16 +56,33 @@ type UrgentInput = {
   requiredSkill: string;
   estimatedHours: number;
   deadline: string;
-  priority: "Critical" | "High";
+  priority: string;
   preferredMemberId: string;
 };
 
-const modules = ["HRIS", "Payroll", "Attendance", "Leave", "Employee", "Company", "Recruitment", "Reports", "Settings", "Mobile App", "Web App", "API", "Other / Custom"];
-const workTypes = ["Manual Testing", "API Testing", "Regression Testing", "Smoke Testing", "Bug Retest", "Test Case Writing", "Test Report", "Release Testing", "Production Verification", "UAT Support", "Automation Testing", "RnD", "Other / Custom"];
-const skills = ["Manual QA", "API Testing", "Regression", "Smoke Testing", "Automation", "SQL/Database", "Mobile App Testing", "Web Testing", "Production Verification", "Test Case Writing", "RnD", "Other / Custom"];
-const statuses = ["Not Started", "In Progress", "Blocked", "Waiting for Dev", "Waiting for Requirement", "Ready for Retest", "Retesting", "On Hold", "Done"];
-const priorities: Task["priority"][] = ["Critical", "High", "Medium", "Low"];
-const unavailableTypes = ["Leave", "Half Day", "Meeting", "Training", "Public Holiday", "Company Holiday", "Release Call", "Other"];
+type ConfigKey = "modules" | "workTypes" | "skills" | "statuses" | "priorities" | "unavailableTypes" | "blockerTypes";
+
+type Config = Record<ConfigKey, string[]>;
+
+const defaultConfig: Config = {
+  modules: ["HRIS", "Payroll", "Attendance", "Leave", "Employee", "Company", "Recruitment", "Reports", "Settings", "Mobile App", "Web App", "API", "Other / Custom"],
+  workTypes: ["Manual Testing", "API Testing", "Regression Testing", "Smoke Testing", "Bug Retest", "Test Case Writing", "Test Report", "Release Testing", "Production Verification", "UAT Support", "Automation Testing", "RnD", "Other / Custom"],
+  skills: ["Manual QA", "API Testing", "Regression", "Smoke Testing", "Automation", "SQL/Database", "Mobile App Testing", "Web Testing", "Production Verification", "Test Case Writing", "RnD", "Other / Custom"],
+  statuses: ["Not Started", "In Progress", "Blocked", "Waiting for Dev", "Waiting for Requirement", "Ready for Retest", "Retesting", "On Hold", "Done"],
+  priorities: ["Critical", "High", "Medium", "Low"],
+  unavailableTypes: ["Leave", "Half Day", "Meeting", "Training", "Public Holiday", "Company Holiday", "Release Call", "Other"],
+  blockerTypes: ["Dev", "Requirement", "Environment", "Data", "Access", "Other"],
+};
+
+const configLabels: Record<ConfigKey, string> = {
+  modules: "Project / Module",
+  workTypes: "Work Types",
+  skills: "Skills",
+  statuses: "Task Statuses",
+  priorities: "Priorities",
+  unavailableTypes: "Unavailable / Holiday Types",
+  blockerTypes: "Blocker Types",
+};
 
 const initialMembers: Member[] = [
   { id: "nahid", name: "Nahid", role: "QA Lead", dailyCapacity: 6, skills: ["Manual QA", "API Testing", "Regression", "SQL/Database"], status: "Active" },
@@ -108,10 +125,11 @@ function statusColor(status: string) {
   if (status === "Done") return "bg-emerald-100 text-emerald-800";
   if (status.includes("Blocked") || status.includes("Waiting")) return "bg-amber-100 text-amber-800";
   if (status === "In Progress" || status === "Retesting") return "bg-blue-100 text-blue-800";
+  if (status === "On Hold") return "bg-slate-200 text-slate-800";
   return "bg-slate-100 text-slate-700";
 }
 
-function priorityColor(priority: Task["priority"]) {
+function priorityColor(priority: string) {
   if (priority === "Critical") return "bg-red-100 text-red-800";
   if (priority === "High") return "bg-orange-100 text-orange-800";
   if (priority === "Medium") return "bg-yellow-100 text-yellow-800";
@@ -148,6 +166,14 @@ const seedAllocations: Allocation[] = [
   { id: "A-004", date: todayString(), memberId: "safin", taskId: "T-004", plannedHours: 3, actualHours: undefined, note: "Plan" },
 ];
 
+function normalizeConfig(config: Partial<Config> | null | undefined): Config {
+  return { ...defaultConfig, ...(config ?? {}) };
+}
+
+function firstValue(config: Config, key: ConfigKey, fallback: string) {
+  return config[key]?.[0] ?? fallback;
+}
+
 function useLocalState<T>(key: string, initialValue: T) {
   const [value, setValue] = useState<T>(initialValue);
   const [ready, setReady] = useState(false);
@@ -166,6 +192,8 @@ function useLocalState<T>(key: string, initialValue: T) {
 }
 
 export default function Home() {
+  const [config, setConfig] = useLocalState<Config>("qa-config", defaultConfig);
+  const safeConfig = normalizeConfig(config);
   const [members, setMembers] = useLocalState<Member[]>("qa-members", initialMembers);
   const [tasks, setTasks] = useLocalState<Task[]>("qa-tasks", seedTasks);
   const [allocations, setAllocations] = useLocalState<Allocation[]>("qa-allocations", seedAllocations);
@@ -176,12 +204,14 @@ export default function Home() {
   const [tab, setTab] = useState("Dashboard");
   const [startDate, setStartDate] = useState(todayString());
   const [days, setDays] = useState(7);
+  const [taskStatusFilter, setTaskStatusFilter] = useState("All");
   const [taskDraft, setTaskDraft] = useState<Task>({ id: "", name: "", module: "HRIS", workType: "Manual Testing", requiredSkill: "Manual QA", assignedTo: "nahid", priority: "Medium", status: "Not Started", startDate: todayString(), dueDate: addDays(todayString(), 2), estimatedHours: 4, adjustedRemaining: undefined, blocked: false, blockerType: "", blockerNote: "", blockedSince: "", notes: "" });
   const [allocationDraft, setAllocationDraft] = useState<Allocation>({ id: "", date: todayString(), memberId: "nahid", taskId: "T-001", plannedHours: 1, actualHours: undefined, note: "" });
   const [unavailableDraft, setUnavailableDraft] = useState<Unavailable>({ id: "", date: todayString(), memberId: "all", type: "Public Holiday", hours: 6, reason: "" });
   const [memberDraft, setMemberDraft] = useState<Member>({ id: "", name: "", role: "QA", dailyCapacity: 6, skills: ["Manual QA"], status: "Active" });
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [urgent, setUrgent] = useState<UrgentInput>({ name: "Urgent release retest", workType: "Bug Retest", requiredSkill: "Manual QA", estimatedHours: 6, deadline: addDays(todayString(), 1), priority: "Critical", preferredMemberId: "" });
+  const [configDrafts, setConfigDrafts] = useState<Record<ConfigKey, string>>({ modules: "", workTypes: "", skills: "", statuses: "", priorities: "", unavailableTypes: "", blockerTypes: "" });
 
   const activeMembers = members.filter((member) => member.status === "Active");
   const dateRange = useMemo(() => Array.from({ length: days }, (_, index) => addDays(startDate, index)), [days, startDate]);
@@ -263,12 +293,26 @@ export default function Home() {
     return { best, backup, risk, shifts, windowDates };
   }, [activeMembers, allocations, members, tasks, unavailable, urgent]);
 
+  const filteredTasks = tasks.filter((task) => taskStatusFilter === "All" || task.status === taskStatusFilter);
+
   function addTask() {
     if (!taskDraft.name.trim()) return;
     const nextNumber = String(tasks.length + 1).padStart(3, "0");
     const newTask = { ...taskDraft, id: taskDraft.id.trim() || `T-${nextNumber}`, name: taskDraft.name.trim(), blocked: taskDraft.status === "Blocked" || taskDraft.blocked };
     setTasks([newTask, ...tasks]);
-    setTaskDraft({ ...taskDraft, id: "", name: "", notes: "", status: "Not Started", estimatedHours: 4, adjustedRemaining: undefined, blocked: false, blockerType: "", blockerNote: "", blockedSince: "" });
+    setTaskDraft({ ...taskDraft, id: "", name: "", notes: "", status: firstValue(safeConfig, "statuses", "Not Started"), estimatedHours: 4, adjustedRemaining: undefined, blocked: false, blockerType: "", blockerNote: "", blockedSince: "" });
+  }
+
+  function updateTaskStatus(taskId: string, status: string) {
+    const shouldBlock = status === "Blocked" || status.includes("Waiting");
+    setTasks(tasks.map((task) => task.id === taskId ? {
+      ...task,
+      status,
+      blocked: shouldBlock,
+      blockerType: shouldBlock ? task.blockerType : "",
+      blockerNote: shouldBlock ? task.blockerNote : "",
+      blockedSince: shouldBlock ? task.blockedSince || todayString() : "",
+    } : task));
   }
 
   function addAllocation() {
@@ -284,30 +328,86 @@ export default function Home() {
 
   function resetMemberForm() {
     setEditingMemberId(null);
-    setMemberDraft({ id: "", name: "", role: "QA", dailyCapacity: 6, skills: ["Manual QA"], status: "Active" });
+    setMemberDraft({ id: "", name: "", role: "QA", dailyCapacity: 6, skills: [firstValue(safeConfig, "skills", "Manual QA")], status: "Active" });
   }
 
   function addMember() {
     if (!memberDraft.name.trim()) return;
-    const baseId = memberDraft.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || uid("M");
-    const id = members.some((member) => member.id === baseId) ? uid(baseId) : baseId;
+    const id = memberDraft.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || uid("M");
     setMembers([{ ...memberDraft, id }, ...members]);
     resetMemberForm();
   }
 
   function startEditMember(member: Member) {
     setEditingMemberId(member.id);
-    setMemberDraft({ ...member, skills: member.skills.length ? member.skills : ["Manual QA"] });
+    setMemberDraft({ ...member, skills: member.skills.length ? member.skills : [firstValue(safeConfig, "skills", "Manual QA")] });
   }
 
   function saveMember() {
     if (!editingMemberId || !memberDraft.name.trim()) return;
-    setMembers(members.map((member) => member.id === editingMemberId ? { ...member, ...memberDraft, id: member.id } : member));
+    setMembers(members.map((member) => member.id === editingMemberId ? { ...memberDraft, id: editingMemberId } : member));
     resetMemberForm();
   }
 
   function deactivateMember(memberId: string) {
     setMembers(members.map((member) => member.id === memberId ? { ...member, status: "Inactive" } : member));
+  }
+
+  function addConfigValue(key: ConfigKey) {
+    const value = configDrafts[key].trim();
+    if (!value || safeConfig[key].includes(value)) return;
+    setConfig({ ...safeConfig, [key]: [...safeConfig[key], value] });
+    setConfigDrafts({ ...configDrafts, [key]: "" });
+  }
+
+  function renameConfigValue(key: ConfigKey, oldValue: string, newRawValue: string) {
+    const newValue = newRawValue.trim();
+    if (!newValue || newValue === oldValue || safeConfig[key].includes(newValue)) return;
+    const nextConfig = { ...safeConfig, [key]: safeConfig[key].map((value) => value === oldValue ? newValue : value) };
+    setConfig(nextConfig);
+    replaceConfigReferences(key, oldValue, newValue);
+  }
+
+  function removeConfigValue(key: ConfigKey, value: string) {
+    if (safeConfig[key].length <= 1) return;
+    setConfig({ ...safeConfig, [key]: safeConfig[key].filter((item) => item !== value) });
+  }
+
+  function replaceConfigReferences(key: ConfigKey, oldValue: string, newValue: string) {
+    if (key === "modules") {
+      setTasks(tasks.map((task) => task.module === oldValue ? { ...task, module: newValue } : task));
+      if (taskDraft.module === oldValue) setTaskDraft({ ...taskDraft, module: newValue });
+    }
+    if (key === "workTypes") {
+      setTasks(tasks.map((task) => task.workType === oldValue ? { ...task, workType: newValue } : task));
+      if (taskDraft.workType === oldValue) setTaskDraft({ ...taskDraft, workType: newValue });
+      if (urgent.workType === oldValue) setUrgent({ ...urgent, workType: newValue });
+    }
+    if (key === "skills") {
+      setTasks(tasks.map((task) => task.requiredSkill === oldValue ? { ...task, requiredSkill: newValue } : task));
+      setMembers(members.map((member) => ({ ...member, skills: member.skills.map((skill) => skill === oldValue ? newValue : skill) })));
+      if (taskDraft.requiredSkill === oldValue) setTaskDraft({ ...taskDraft, requiredSkill: newValue });
+      if (memberDraft.skills.includes(oldValue)) setMemberDraft({ ...memberDraft, skills: memberDraft.skills.map((skill) => skill === oldValue ? newValue : skill) });
+      if (urgent.requiredSkill === oldValue) setUrgent({ ...urgent, requiredSkill: newValue });
+    }
+    if (key === "statuses") {
+      setTasks(tasks.map((task) => task.status === oldValue ? { ...task, status: newValue } : task));
+      if (taskDraft.status === oldValue) setTaskDraft({ ...taskDraft, status: newValue });
+      if (taskStatusFilter === oldValue) setTaskStatusFilter(newValue);
+    }
+    if (key === "priorities") {
+      setTasks(tasks.map((task) => task.priority === oldValue ? { ...task, priority: newValue } : task));
+      if (taskDraft.priority === oldValue) setTaskDraft({ ...taskDraft, priority: newValue });
+      if (urgent.priority === oldValue) setUrgent({ ...urgent, priority: newValue });
+    }
+    if (key === "unavailableTypes") {
+      setUnavailable(unavailable.map((item) => item.type === oldValue ? { ...item, type: newValue } : item));
+      if (unavailableDraft.type === oldValue) setUnavailableDraft({ ...unavailableDraft, type: newValue });
+    }
+    if (key === "blockerTypes") {
+      setTasks(tasks.map((task) => task.blockerType === oldValue ? { ...task, blockerType: newValue } : task));
+      if (taskDraft.blockerType === oldValue) setTaskDraft({ ...taskDraft, blockerType: newValue });
+    }
   }
 
   const inputClass = "w-full rounded-xl border border-emerald-100 bg-white px-3 py-2 text-sm outline-none ring-emerald-200 focus:ring-4";
@@ -333,7 +433,7 @@ export default function Home() {
         </div>
 
         <div className="mb-5 flex flex-wrap gap-2">
-          {["Dashboard", "Tasks", "Daily Allocation", "Availability", "Urgent Planner", "Team"].map((item) => (
+          {["Dashboard", "Tasks", "Daily Allocation", "Availability", "Urgent Planner", "Team", "Config"].map((item) => (
             <button key={item} onClick={() => setTab(item)} className={tab === item ? buttonClass : subtleButtonClass}>{item}</button>
           ))}
         </div>
@@ -419,18 +519,22 @@ export default function Home() {
             <Card title="Add task" subtitle="Lead can create work items here.">
               <div className="space-y-3">
                 <input className={inputClass} placeholder="Task name" value={taskDraft.name} onChange={(event) => setTaskDraft({ ...taskDraft, name: event.target.value })} />
-                <div className="grid grid-cols-2 gap-3"><Select label="Module" value={taskDraft.module} options={modules} onChange={(value) => setTaskDraft({ ...taskDraft, module: value })} /><Select label="Work type" value={taskDraft.workType} options={workTypes} onChange={(value) => setTaskDraft({ ...taskDraft, workType: value })} /></div>
-                <div className="grid grid-cols-2 gap-3"><Select label="Skill" value={taskDraft.requiredSkill} options={skills} onChange={(value) => setTaskDraft({ ...taskDraft, requiredSkill: value })} /><Select label="Assigned QA" value={taskDraft.assignedTo} options={activeMembers.map((m) => m.id)} optionLabel={memberName} onChange={(value) => setTaskDraft({ ...taskDraft, assignedTo: value })} /></div>
-                <div className="grid grid-cols-2 gap-3"><Select label="Priority" value={taskDraft.priority} options={priorities} onChange={(value) => setTaskDraft({ ...taskDraft, priority: value as Task["priority"] })} /><Select label="Status" value={taskDraft.status} options={statuses} onChange={(value) => setTaskDraft({ ...taskDraft, status: value, blocked: value === "Blocked" ? true : taskDraft.blocked })} /></div>
+                <div className="grid grid-cols-2 gap-3"><Select label="Module" value={taskDraft.module} options={safeConfig.modules} onChange={(value) => setTaskDraft({ ...taskDraft, module: value })} /><Select label="Work type" value={taskDraft.workType} options={safeConfig.workTypes} onChange={(value) => setTaskDraft({ ...taskDraft, workType: value })} /></div>
+                <div className="grid grid-cols-2 gap-3"><Select label="Skill" value={taskDraft.requiredSkill} options={safeConfig.skills} onChange={(value) => setTaskDraft({ ...taskDraft, requiredSkill: value })} /><Select label="Assigned QA" value={taskDraft.assignedTo} options={activeMembers.map((m) => m.id)} optionLabel={memberName} onChange={(value) => setTaskDraft({ ...taskDraft, assignedTo: value })} /></div>
+                <div className="grid grid-cols-2 gap-3"><Select label="Priority" value={taskDraft.priority} options={safeConfig.priorities} onChange={(value) => setTaskDraft({ ...taskDraft, priority: value })} /><Select label="Status" value={taskDraft.status} options={safeConfig.statuses} onChange={(value) => setTaskDraft({ ...taskDraft, status: value, blocked: value === "Blocked" ? true : taskDraft.blocked })} /></div>
                 <div className="grid grid-cols-2 gap-3"><label className="text-sm font-medium">Start date<input type="date" className={inputClass} value={taskDraft.startDate} onChange={(event) => setTaskDraft({ ...taskDraft, startDate: event.target.value })} /></label><label className="text-sm font-medium">Due date<input type="date" className={inputClass} value={taskDraft.dueDate} onChange={(event) => setTaskDraft({ ...taskDraft, dueDate: event.target.value })} /></label></div>
                 <label className="text-sm font-medium">Estimated hours<input type="number" min={0} className={inputClass} value={taskDraft.estimatedHours} onChange={(event) => setTaskDraft({ ...taskDraft, estimatedHours: Number(event.target.value) })} /></label>
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={taskDraft.blocked} onChange={(event) => setTaskDraft({ ...taskDraft, blocked: event.target.checked })} /> Blocked?</label>
-                {taskDraft.blocked && <div className="space-y-3"><Select label="Blocker type" value={taskDraft.blockerType} options={["Dev", "Requirement", "Environment", "Data", "Access", "Other"]} onChange={(value) => setTaskDraft({ ...taskDraft, blockerType: value })} /><input className={inputClass} placeholder="Blocker note" value={taskDraft.blockerNote} onChange={(event) => setTaskDraft({ ...taskDraft, blockerNote: event.target.value })} /><label className="text-sm font-medium">Blocked since<input type="date" className={inputClass} value={taskDraft.blockedSince} onChange={(event) => setTaskDraft({ ...taskDraft, blockedSince: event.target.value })} /></label></div>}
+                {taskDraft.blocked && <div className="space-y-3"><Select label="Blocker type" value={taskDraft.blockerType} options={safeConfig.blockerTypes} onChange={(value) => setTaskDraft({ ...taskDraft, blockerType: value })} /><input className={inputClass} placeholder="Blocker note" value={taskDraft.blockerNote} onChange={(event) => setTaskDraft({ ...taskDraft, blockerNote: event.target.value })} /><label className="text-sm font-medium">Blocked since<input type="date" className={inputClass} value={taskDraft.blockedSince} onChange={(event) => setTaskDraft({ ...taskDraft, blockedSince: event.target.value })} /></label></div>}
                 <button className={buttonClass} onClick={addTask}>Add task</button>
               </div>
             </Card>
-            <Card title="Task list" subtitle="Task status can be edited in code/database in next phase. MVP supports adding and removing sample rows.">
-              <div className="table-scroll"><table className="w-full min-w-[980px] text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="py-3">ID</th><th>Task</th><th>Assigned</th><th>Priority</th><th>Status</th><th>Due</th><th>Remaining</th><th>Risk</th><th></th></tr></thead><tbody>{tasks.map((task) => <tr key={task.id} className="border-b border-slate-100"><td className="py-3 font-semibold">{task.id}</td><td>{task.name}<br /><span className="text-xs text-slate-500">{task.module} • {task.workType}</span></td><td>{memberName(task.assignedTo)}</td><td><span className={`rounded-full px-2 py-1 text-xs ${priorityColor(task.priority)}`}>{task.priority}</span></td><td><span className={`rounded-full px-2 py-1 text-xs ${statusColor(task.status)}`}>{task.status}</span></td><td>{task.dueDate}</td><td>{remainingFor(task)}h</td><td>{deadlineRisk(task)}</td><td><button className="text-red-600" onClick={() => setTasks(tasks.filter((item) => item.id !== task.id))}>Remove</button></td></tr>)}</tbody></table></div>
+            <Card title="Task list" subtitle="Update status directly from the table. Use filter to focus on a specific status.">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="max-w-xs flex-1"><Select label="Filter by status" value={taskStatusFilter} options={["All", ...safeConfig.statuses]} onChange={setTaskStatusFilter} /></div>
+                <p className="text-sm text-slate-500">Showing <strong>{filteredTasks.length}</strong> of <strong>{tasks.length}</strong> tasks</p>
+              </div>
+              <div className="table-scroll"><table className="w-full min-w-[1080px] text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="py-3">ID</th><th>Task</th><th>Assigned</th><th>Priority</th><th>Status</th><th>Due</th><th>Remaining</th><th>Risk</th><th></th></tr></thead><tbody>{filteredTasks.map((task) => <tr key={task.id} className="border-b border-slate-100"><td className="py-3 font-semibold">{task.id}</td><td>{task.name}<br /><span className="text-xs text-slate-500">{task.module} • {task.workType}</span></td><td>{memberName(task.assignedTo)}</td><td><span className={`rounded-full px-2 py-1 text-xs ${priorityColor(task.priority)}`}>{task.priority}</span></td><td><select className={`rounded-xl px-2 py-1 text-xs font-semibold outline-none ${statusColor(task.status)}`} value={task.status} onChange={(event) => updateTaskStatus(task.id, event.target.value)}>{safeConfig.statuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></td><td>{task.dueDate}</td><td>{remainingFor(task)}h</td><td>{deadlineRisk(task)}</td><td><button className="text-red-600" onClick={() => setTasks(tasks.filter((item) => item.id !== task.id))}>Remove</button></td></tr>)}</tbody></table></div>
             </Card>
           </div>
         )}
@@ -462,7 +566,7 @@ export default function Home() {
               <div className="space-y-3">
                 <label className="text-sm font-medium">Date<input type="date" className={inputClass} value={unavailableDraft.date} onChange={(event) => setUnavailableDraft({ ...unavailableDraft, date: event.target.value })} /></label>
                 <Select label="Member" value={unavailableDraft.memberId} options={["all", ...activeMembers.map((m) => m.id)]} optionLabel={(id) => id === "all" ? "All members" : memberName(id)} onChange={(value) => setUnavailableDraft({ ...unavailableDraft, memberId: value })} />
-                <Select label="Type" value={unavailableDraft.type} options={unavailableTypes} onChange={(value) => setUnavailableDraft({ ...unavailableDraft, type: value })} />
+                <Select label="Type" value={unavailableDraft.type} options={safeConfig.unavailableTypes} onChange={(value) => setUnavailableDraft({ ...unavailableDraft, type: value })} />
                 <label className="text-sm font-medium">Unavailable hours<input type="number" min={0} step="0.5" className={inputClass} value={unavailableDraft.hours} onChange={(event) => setUnavailableDraft({ ...unavailableDraft, hours: Number(event.target.value) })} /></label>
                 <input className={inputClass} placeholder="Reason / note" value={unavailableDraft.reason} onChange={(event) => setUnavailableDraft({ ...unavailableDraft, reason: event.target.value })} />
                 <button className={buttonClass} onClick={addUnavailable}>Add unavailable</button>
@@ -479,8 +583,9 @@ export default function Home() {
             <Card title="Urgent task input" subtitle="This suggests impact. It does not automatically change allocation.">
               <div className="space-y-3">
                 <input className={inputClass} value={urgent.name} onChange={(event) => setUrgent({ ...urgent, name: event.target.value })} placeholder="Urgent task name" />
-                <div className="grid grid-cols-2 gap-3"><Select label="Work type" value={urgent.workType} options={workTypes} onChange={(value) => setUrgent({ ...urgent, workType: value })} /><Select label="Required skill" value={urgent.requiredSkill} options={skills} onChange={(value) => setUrgent({ ...urgent, requiredSkill: value })} /></div>
+                <div className="grid grid-cols-2 gap-3"><Select label="Work type" value={urgent.workType} options={safeConfig.workTypes} onChange={(value) => setUrgent({ ...urgent, workType: value })} /><Select label="Required skill" value={urgent.requiredSkill} options={safeConfig.skills} onChange={(value) => setUrgent({ ...urgent, requiredSkill: value })} /></div>
                 <div className="grid grid-cols-2 gap-3"><label className="text-sm font-medium">Estimated hours<input className={inputClass} type="number" min={1} value={urgent.estimatedHours} onChange={(event) => setUrgent({ ...urgent, estimatedHours: Number(event.target.value) })} /></label><label className="text-sm font-medium">Deadline<input className={inputClass} type="date" value={urgent.deadline} onChange={(event) => setUrgent({ ...urgent, deadline: event.target.value })} /></label></div>
+                <Select label="Priority" value={urgent.priority} options={safeConfig.priorities} onChange={(value) => setUrgent({ ...urgent, priority: value })} />
                 <Select label="Preferred QA (optional)" value={urgent.preferredMemberId} options={["", ...activeMembers.map((m) => m.id)]} optionLabel={(id) => id ? memberName(id) : "No preference"} onChange={(value) => setUrgent({ ...urgent, preferredMemberId: value })} />
               </div>
             </Card>
@@ -511,7 +616,7 @@ export default function Home() {
                 <input className={inputClass} placeholder="Name" value={memberDraft.name} onChange={(event) => setMemberDraft({ ...memberDraft, name: event.target.value })} />
                 <input className={inputClass} placeholder="Role" value={memberDraft.role} onChange={(event) => setMemberDraft({ ...memberDraft, role: event.target.value })} />
                 <label className="text-sm font-medium">Daily capacity<input className={inputClass} type="number" min={0} step="0.5" value={memberDraft.dailyCapacity} onChange={(event) => setMemberDraft({ ...memberDraft, dailyCapacity: Number(event.target.value) })} /></label>
-                <Select label="Primary skill" value={memberDraft.skills[0] ?? "Manual QA"} options={skills} onChange={(value) => setMemberDraft({ ...memberDraft, skills: [value] })} />
+                <Select label="Primary skill" value={memberDraft.skills[0] ?? firstValue(safeConfig, "skills", "Manual QA")} options={safeConfig.skills} onChange={(value) => setMemberDraft({ ...memberDraft, skills: [value] })} />
                 <Select label="Status" value={memberDraft.status} options={["Active", "Inactive"]} onChange={(value) => setMemberDraft({ ...memberDraft, status: value as Member["status"] })} />
                 <div className="flex flex-wrap gap-2">
                   <button className={buttonClass} onClick={editingMemberId ? saveMember : addMember}>{editingMemberId ? "Save changes" : "Add member"}</button>
@@ -547,6 +652,33 @@ export default function Home() {
             </Card>
           </div>
         )}
+
+        {tab === "Config" && (
+          <div className="space-y-5">
+            <Card title="Config menu" subtitle="Manage dropdown values used across Tasks, Daily Allocation, Availability, Urgent Planner, and Team forms. Rename updates existing records where possible.">
+              <div className="grid gap-4 lg:grid-cols-2">
+                {(Object.keys(configLabels) as ConfigKey[]).map((key) => (
+                  <div key={key} className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
+                    <h3 className="font-bold text-slate-900">{configLabels[key]}</h3>
+                    <div className="mt-3 flex gap-2">
+                      <input className={inputClass} placeholder={`Add ${configLabels[key]}`} value={configDrafts[key]} onChange={(event) => setConfigDrafts({ ...configDrafts, [key]: event.target.value })} />
+                      <button className={buttonClass} onClick={() => addConfigValue(key)}>Add</button>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {safeConfig[key].map((value) => (
+                        <form key={value} className="flex gap-2" onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget; const next = new FormData(form).get("value")?.toString() ?? value; renameConfigValue(key, value, next); }}>
+                          <input name="value" className={inputClass} defaultValue={value} />
+                          <button className={subtleButtonClass} type="submit">Save</button>
+                          <button className="rounded-xl border border-red-100 bg-white px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50" type="button" onClick={() => removeConfigValue(key, value)}>Remove</button>
+                        </form>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        )}
       </section>
     </main>
   );
@@ -561,7 +693,8 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 }
 
 function Select({ label, value, options, onChange, optionLabel }: { label: string; value: string; options: string[]; onChange: (value: string) => void; optionLabel?: (value: string) => string }) {
-  return <label className="text-sm font-medium text-slate-700">{label}<select className="mt-1 w-full rounded-xl border border-emerald-100 bg-white px-3 py-2 text-sm outline-none ring-emerald-200 focus:ring-4" value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option} value={option}>{optionLabel ? optionLabel(option) : option}</option>)}</select></label>;
+  const displayOptions = options.includes(value) ? options : value ? [value, ...options] : options;
+  return <label className="text-sm font-medium text-slate-700">{label}<select className="mt-1 w-full rounded-xl border border-emerald-100 bg-white px-3 py-2 text-sm outline-none ring-emerald-200 focus:ring-4" value={value} onChange={(event) => onChange(event.target.value)}>{displayOptions.map((option) => <option key={option} value={option}>{optionLabel ? optionLabel(option) : option}</option>)}</select></label>;
 }
 
 function SimpleTable({ headers, rows, empty = "No data available." }: { headers: string[]; rows: (string | number)[][]; empty?: string }) {
