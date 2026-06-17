@@ -180,6 +180,7 @@ export default function Home() {
   const [allocationDraft, setAllocationDraft] = useState<Allocation>({ id: "", date: todayString(), memberId: "nahid", taskId: "T-001", plannedHours: 1, actualHours: undefined, note: "" });
   const [unavailableDraft, setUnavailableDraft] = useState<Unavailable>({ id: "", date: todayString(), memberId: "all", type: "Public Holiday", hours: 6, reason: "" });
   const [memberDraft, setMemberDraft] = useState<Member>({ id: "", name: "", role: "QA", dailyCapacity: 6, skills: ["Manual QA"], status: "Active" });
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [urgent, setUrgent] = useState<UrgentInput>({ name: "Urgent release retest", workType: "Bug Retest", requiredSkill: "Manual QA", estimatedHours: 6, deadline: addDays(todayString(), 1), priority: "Critical", preferredMemberId: "" });
 
   const activeMembers = members.filter((member) => member.status === "Active");
@@ -281,11 +282,32 @@ export default function Home() {
     setUnavailableDraft({ ...unavailableDraft, reason: "" });
   }
 
+  function resetMemberForm() {
+    setEditingMemberId(null);
+    setMemberDraft({ id: "", name: "", role: "QA", dailyCapacity: 6, skills: ["Manual QA"], status: "Active" });
+  }
+
   function addMember() {
     if (!memberDraft.name.trim()) return;
-    const id = memberDraft.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || uid("M");
+    const baseId = memberDraft.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || uid("M");
+    const id = members.some((member) => member.id === baseId) ? uid(baseId) : baseId;
     setMembers([{ ...memberDraft, id }, ...members]);
-    setMemberDraft({ id: "", name: "", role: "QA", dailyCapacity: 6, skills: ["Manual QA"], status: "Active" });
+    resetMemberForm();
+  }
+
+  function startEditMember(member: Member) {
+    setEditingMemberId(member.id);
+    setMemberDraft({ ...member, skills: member.skills.length ? member.skills : ["Manual QA"] });
+  }
+
+  function saveMember() {
+    if (!editingMemberId || !memberDraft.name.trim()) return;
+    setMembers(members.map((member) => member.id === editingMemberId ? { ...member, ...memberDraft, id: member.id } : member));
+    resetMemberForm();
+  }
+
+  function deactivateMember(memberId: string) {
+    setMembers(members.map((member) => member.id === memberId ? { ...member, status: "Inactive" } : member));
   }
 
   const inputClass = "w-full rounded-xl border border-emerald-100 bg-white px-3 py-2 text-sm outline-none ring-emerald-200 focus:ring-4";
@@ -484,11 +506,44 @@ export default function Home() {
 
         {tab === "Team" && (
           <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
-            <Card title="Add team member" subtitle="For future QA members.">
-              <div className="space-y-3"><input className={inputClass} placeholder="Name" value={memberDraft.name} onChange={(event) => setMemberDraft({ ...memberDraft, name: event.target.value })} /><input className={inputClass} placeholder="Role" value={memberDraft.role} onChange={(event) => setMemberDraft({ ...memberDraft, role: event.target.value })} /><label className="text-sm font-medium">Daily capacity<input className={inputClass} type="number" value={memberDraft.dailyCapacity} onChange={(event) => setMemberDraft({ ...memberDraft, dailyCapacity: Number(event.target.value) })} /></label><Select label="Primary skill" value={memberDraft.skills[0]} options={skills} onChange={(value) => setMemberDraft({ ...memberDraft, skills: [value] })} /><button className={buttonClass} onClick={addMember}>Add member</button></div>
+            <Card title={editingMemberId ? "Edit team member" : "Add team member"} subtitle={editingMemberId ? "Update name, role, capacity, skill, or active status. Changes reflect in the dashboard immediately." : "For future QA members. Existing members can be edited from the list."}>
+              <div className="space-y-3">
+                <input className={inputClass} placeholder="Name" value={memberDraft.name} onChange={(event) => setMemberDraft({ ...memberDraft, name: event.target.value })} />
+                <input className={inputClass} placeholder="Role" value={memberDraft.role} onChange={(event) => setMemberDraft({ ...memberDraft, role: event.target.value })} />
+                <label className="text-sm font-medium">Daily capacity<input className={inputClass} type="number" min={0} step="0.5" value={memberDraft.dailyCapacity} onChange={(event) => setMemberDraft({ ...memberDraft, dailyCapacity: Number(event.target.value) })} /></label>
+                <Select label="Primary skill" value={memberDraft.skills[0] ?? "Manual QA"} options={skills} onChange={(value) => setMemberDraft({ ...memberDraft, skills: [value] })} />
+                <Select label="Status" value={memberDraft.status} options={["Active", "Inactive"]} onChange={(value) => setMemberDraft({ ...memberDraft, status: value as Member["status"] })} />
+                <div className="flex flex-wrap gap-2">
+                  <button className={buttonClass} onClick={editingMemberId ? saveMember : addMember}>{editingMemberId ? "Save changes" : "Add member"}</button>
+                  {editingMemberId && <button className={subtleButtonClass} onClick={resetMemberForm}>Cancel edit</button>}
+                </div>
+              </div>
             </Card>
-            <Card title="Team members" subtitle="Initial QA team loaded from requirement.">
-              <SimpleTable headers={["Name", "Role", "Capacity", "Skills", "Status"]} rows={members.map((member) => [member.name, member.role, `${member.dailyCapacity}h/day`, member.skills.join(", "), member.status])} />
+            <Card title="Team members" subtitle="Use Edit for role/name/capacity changes. Use Deactivate instead of delete to keep old task history safe.">
+              <div className="table-scroll">
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b text-slate-500"><th className="py-3 pr-4">Name</th><th className="pr-4">Role</th><th className="pr-4">Capacity</th><th className="pr-4">Skills</th><th className="pr-4">Status</th><th className="pr-4">Actions</th></tr>
+                  </thead>
+                  <tbody>
+                    {members.map((member) => (
+                      <tr key={member.id} className="border-b border-slate-100">
+                        <td className="py-3 pr-4 font-semibold text-slate-800">{member.name}</td>
+                        <td className="pr-4 text-slate-700">{member.role}</td>
+                        <td className="pr-4 text-slate-700">{member.dailyCapacity}h/day</td>
+                        <td className="pr-4 text-slate-700">{member.skills.join(", ")}</td>
+                        <td className="pr-4"><span className={`rounded-full px-2 py-1 text-xs ${member.status === "Active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>{member.status}</span></td>
+                        <td className="pr-4">
+                          <div className="flex flex-wrap gap-2">
+                            <button className="font-semibold text-emerald-700 hover:text-emerald-900" onClick={() => startEditMember(member)}>Edit</button>
+                            {member.status === "Active" && <button className="font-semibold text-amber-700 hover:text-amber-900" onClick={() => deactivateMember(member.id)}>Deactivate</button>}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </Card>
           </div>
         )}
