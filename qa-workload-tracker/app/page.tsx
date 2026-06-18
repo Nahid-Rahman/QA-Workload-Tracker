@@ -216,6 +216,14 @@ export default function Home() {
   const [startDate, setStartDate] = useState(todayString());
   const [days, setDays] = useState(7);
   const [taskStatusFilter, setTaskStatusFilter] = useState("All");
+  const [allocationDateFilter, setAllocationDateFilter] = useState("All");
+  const [allocationFilterStartDate, setAllocationFilterStartDate] = useState(todayString());
+  const [allocationFilterEndDate, setAllocationFilterEndDate] = useState(todayString());
+  const [historyPeriod, setHistoryPeriod] = useState("All Time");
+  const [historyMemberFilter, setHistoryMemberFilter] = useState("All");
+  const [historyStartDate, setHistoryStartDate] = useState(addDays(todayString(), -6));
+  const [historyEndDate, setHistoryEndDate] = useState(todayString());
+  const [summaryCopied, setSummaryCopied] = useState(false);
   const [taskDraft, setTaskDraft] = useState<Task>({ id: "", name: "", module: "HRIS", workType: "Manual Testing", requiredSkill: "Manual QA", assignedTo: "nahid", priority: "Medium", status: "Not Started", startDate: todayString(), dueDate: addDays(todayString(), 2), estimatedHours: 4, adjustedRemaining: undefined, blocked: false, blockerType: "", blockerNote: "", blockedSince: "", notes: "" });
   const [allocationDraft, setAllocationDraft] = useState<Allocation>({ id: "", date: todayString(), memberId: "nahid", taskId: "T-001", plannedHours: 1, actualHours: undefined, note: "" });
   const [bulkAllocationDraft, setBulkAllocationDraft] = useState<BulkAllocationDraft>({ startDate: todayString(), endDate: addDays(todayString(), 9), memberId: "nahid", taskId: "T-001", plannedHours: 3, note: "Repeated plan", skipFriday: true, skipUnavailable: true });
@@ -232,6 +240,8 @@ export default function Home() {
 
   const memberName = (id: string) => members.find((member) => member.id === id)?.name ?? id;
   const taskName = (id: string) => tasks.find((task) => task.id === id)?.name ?? id;
+  const taskById = (id: string) => tasks.find((task) => task.id === id);
+  const allocationVariance = (item: Allocation) => item.actualHours === undefined ? "Not Updated" : `${item.actualHours - item.plannedHours}h`;
 
   const plannedFor = (memberId: string, date: string) => allocations.filter((item) => item.memberId === memberId && item.date === date).reduce((sum, item) => sum + Number(item.plannedHours || 0), 0);
   const actualFor = (memberId: string, date: string) => allocations.filter((item) => item.memberId === memberId && item.date === date).reduce((sum, item) => sum + Number(item.actualHours || 0), 0);
@@ -308,6 +318,109 @@ export default function Home() {
   }, [activeMembers, allocations, members, tasks, unavailable, urgent]);
 
   const filteredTasks = tasks.filter((task) => taskStatusFilter === "All" || task.status === taskStatusFilter);
+
+  function sortAllocationsByDateDesc(rows: Allocation[]) {
+    return [...rows].sort((a, b) => `${b.date}-${b.id}`.localeCompare(`${a.date}-${a.id}`));
+  }
+
+  function filterAllocationsByRange(rows: Allocation[], mode: string, start: string, end: string) {
+    if (mode === "Single Date") return rows.filter((item) => item.date === start);
+    if (mode === "Date Range") {
+      const from = start <= end ? start : end;
+      const to = start <= end ? end : start;
+      return rows.filter((item) => item.date >= from && item.date <= to);
+    }
+    return rows;
+  }
+
+  function historyRange() {
+    if (historyPeriod === "Today") return { start: todayString(), end: todayString() };
+    if (historyPeriod === "Last 7 Days") return { start: addDays(todayString(), -6), end: todayString() };
+    if (historyPeriod === "Last 30 Days") return { start: addDays(todayString(), -29), end: todayString() };
+    if (historyPeriod === "Custom") {
+      const start = historyStartDate <= historyEndDate ? historyStartDate : historyEndDate;
+      const end = historyStartDate <= historyEndDate ? historyEndDate : historyStartDate;
+      return { start, end };
+    }
+    return null;
+  }
+
+  const dailyFilteredAllocations = sortAllocationsByDateDesc(filterAllocationsByRange(allocations, allocationDateFilter, allocationFilterStartDate, allocationFilterEndDate));
+  const historySelectedRange = historyRange();
+  const historyRows = sortAllocationsByDateDesc(allocations.filter((item) => {
+    const memberOk = historyMemberFilter === "All" || item.memberId === historyMemberFilter;
+    const dateOk = !historySelectedRange || (item.date >= historySelectedRange.start && item.date <= historySelectedRange.end);
+    return memberOk && dateOk;
+  }));
+
+  const overdueTasks = tasks.filter((task) => deadlineRisk(task) === "Overdue");
+  const dueTodayTasks = tasks.filter((task) => deadlineRisk(task) === "Due Today");
+  const dueTomorrowTasks = tasks.filter((task) => deadlineRisk(task) === "Due Tomorrow");
+  const blockedTaskList = tasks.filter((task) => task.blocked || task.status === "Blocked");
+  const overloadedMembers = memberWeekly.filter((item) => item.utilization > 100);
+  const noActualUpdateMembers = activeMembers.filter((member) => !allocations.some((item) => item.memberId === member.id && item.date === todayString() && item.actualHours !== undefined));
+
+  const attentionItems = [
+    overloadedMembers.length ? { title: "Overloaded member", detail: overloadedMembers.map((item) => `${item.member.name} ${item.utilization}%`).join(", "), tone: "red" } : null,
+    overdueTasks.length ? { title: "Overdue tasks", detail: overdueTasks.map((task) => `${task.id} ${task.name}`).slice(0, 3).join(", "), tone: "red" } : null,
+    dueTodayTasks.length ? { title: "Due today", detail: dueTodayTasks.map((task) => `${task.id} ${task.name}`).slice(0, 3).join(", "), tone: "amber" } : null,
+    dueTomorrowTasks.length ? { title: "Due tomorrow", detail: dueTomorrowTasks.map((task) => `${task.id} ${task.name}`).slice(0, 3).join(", "), tone: "amber" } : null,
+    blockedTaskList.length ? { title: "Blocked / waiting", detail: blockedTaskList.map((task) => `${task.id} ${task.blockerType || task.status}`).slice(0, 4).join(", "), tone: "amber" } : null,
+    noActualUpdateMembers.length ? { title: "No actual update today", detail: noActualUpdateMembers.map((member) => member.name).join(", "), tone: "slate" } : null,
+  ].filter(Boolean) as { title: string; detail: string; tone: string }[];
+
+  const standupSummary = useMemo(() => {
+    const todayRows = sortAllocationsByDateDesc(allocations.filter((item) => item.date === todayString()));
+    const lines = ["Today’s QA Standup Summary", `Date: ${todayString()}`, ""];
+    activeMembers.forEach((member) => {
+      const rows = todayRows.filter((item) => item.memberId === member.id);
+      if (!rows.length) {
+        lines.push(`- ${member.name}: No allocation/update yet.`);
+        return;
+      }
+      const details = rows.map((item) => `${item.actualHours ?? item.plannedHours}h on ${taskName(item.taskId)}${item.actualHours === undefined ? " planned" : ""}`).join("; ");
+      lines.push(`- ${member.name}: ${details}`);
+    });
+    lines.push("");
+    lines.push(`Blockers: ${blockedTaskList.length ? blockedTaskList.map((task) => `${task.id} ${task.name}`).slice(0, 5).join(", ") : "None"}`);
+    lines.push(`Risks: ${[...overdueTasks, ...dueTodayTasks, ...dueTomorrowTasks].length ? [...overdueTasks, ...dueTodayTasks, ...dueTomorrowTasks].map((task) => `${task.id} ${deadlineRisk(task)}`).slice(0, 5).join(", ") : "No immediate deadline risk"}`);
+    return lines.join("\n");
+  }, [allocations, activeMembers, tasks]);
+
+  function copyStandupSummary() {
+    navigator.clipboard?.writeText(standupSummary).then(() => {
+      setSummaryCopied(true);
+      window.setTimeout(() => setSummaryCopied(false), 1600);
+    });
+  }
+
+  function exportHistoryCsv() {
+    const headers = ["Date", "Member", "Task ID", "Task", "Module", "Work Type", "Planned Hours", "Actual Hours", "Variance", "Status", "Note"];
+    const rows = historyRows.map((item) => {
+      const task = taskById(item.taskId);
+      return [
+        item.date,
+        memberName(item.memberId),
+        item.taskId,
+        task?.name ?? item.taskId,
+        task?.module ?? "-",
+        task?.workType ?? "-",
+        String(item.plannedHours),
+        item.actualHours === undefined ? "" : String(item.actualHours),
+        allocationVariance(item),
+        task?.status ?? "-",
+        item.note || "",
+      ];
+    });
+    const csv = [headers, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `qa-history-${todayString()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   function newTaskDraft(): Task {
     return {
@@ -580,7 +693,7 @@ export default function Home() {
         </div>
 
         <div className="mb-5 flex flex-wrap gap-2">
-          {["Dashboard", "Tasks", "Daily Allocation", "Availability", "Urgent Planner", "Team", "Config"].map((item) => (
+          {["Dashboard", "Tasks", "Daily Allocation", "History", "Availability", "Urgent Planner", "Team", "Config"].map((item) => (
             <button key={item} onClick={() => setTab(item)} className={tab === item ? buttonClass : subtleButtonClass}>{item}</button>
           ))}
         </div>
@@ -604,6 +717,21 @@ export default function Home() {
               {[
                 ["Active Tasks", summary.activeTasks], ["Over Capacity", summary.overCapacity], ["Available Members", summary.availableMembers], ["Blocked Tasks", summary.blockedTasks], ["Due Today/Tomorrow", summary.dueSoon], ["Overdue", summary.overdue]
               ].map(([label, value]) => <div key={label} className="rounded-3xl bg-white p-5 card-shadow"><p className="text-sm text-slate-500">{label}</p><p className="mt-2 text-3xl font-bold text-emerald-800">{value}</p></div>)}
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-2">
+              <Card title="Lead attention / command center" subtitle="Auto highlights what the QA lead should check first.">
+                {attentionItems.length ? <div className="space-y-3">{attentionItems.map((item) => (
+                  <div key={item.title} className={`rounded-2xl border p-4 ${item.tone === "red" ? "border-red-100 bg-red-50 text-red-900" : item.tone === "amber" ? "border-amber-100 bg-amber-50 text-amber-900" : "border-slate-100 bg-slate-50 text-slate-800"}`}>
+                    <p className="font-bold">{item.title}</p>
+                    <p className="mt-1 text-sm">{item.detail}</p>
+                  </div>
+                ))}</div> : <div className="rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-900">No urgent attention item found for now.</div>}
+              </Card>
+              <Card title="Daily standup summary" subtitle="Copy this before daily QA sync or lead update.">
+                <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl bg-slate-950 p-4 text-sm leading-6 text-slate-50">{standupSummary}</pre>
+                <button className={buttonClass} onClick={copyStandupSummary}>{summaryCopied ? "Copied" : "Copy summary"}</button>
+              </Card>
             </div>
 
             <Card title="Next planning window availability heatmap" subtitle="Capacity uses 6 hrs/day and Friday as weekend. Public holiday/unavailable rows reduce capacity.">
@@ -686,7 +814,7 @@ export default function Home() {
                 <div className="max-w-xs flex-1"><Select label="Filter by status" value={taskStatusFilter} options={["All", ...safeConfig.statuses]} onChange={setTaskStatusFilter} /></div>
                 <p className="text-sm text-slate-500">Showing <strong>{filteredTasks.length}</strong> of <strong>{tasks.length}</strong> tasks</p>
               </div>
-              <div className="table-scroll"><table className="w-full min-w-[1180px] text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="py-3">ID</th><th>Task</th><th>Assigned</th><th>Priority</th><th>Status</th><th>Due</th><th>Remaining</th><th>Risk</th><th>Actions</th></tr></thead><tbody>{filteredTasks.map((task) => <tr key={task.id} className="border-b border-slate-100"><td className="py-3 font-semibold">{task.id}</td><td>{task.name}<br /><span className="text-xs text-slate-500">{task.module} • {task.workType}</span></td><td>{memberName(task.assignedTo)}</td><td><span className={`rounded-full px-2 py-1 text-xs ${priorityColor(task.priority)}`}>{task.priority}</span></td><td><select className={`rounded-xl px-2 py-1 text-xs font-semibold outline-none ${statusColor(task.status)}`} value={task.status} onChange={(event) => updateTaskStatus(task.id, event.target.value)}>{safeConfig.statuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></td><td>{task.dueDate}</td><td>{remainingFor(task)}h</td><td>{deadlineRisk(task)}</td><td><div className="flex flex-wrap gap-2"><button className="font-semibold text-emerald-700 hover:text-emerald-900" onClick={() => startEditTask(task)}>Edit</button><button className="font-semibold text-red-600 hover:text-red-800" onClick={() => setTasks(tasks.filter((item) => item.id !== task.id))}>Remove</button></div></td></tr>)}</tbody></table></div>
+              <div className="table-scroll"><table className="w-full min-w-[1260px] text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="py-3">ID</th><th>Task</th><th>Assigned</th><th>Priority</th><th>Status</th><th>Start</th><th>Due</th><th>Remaining</th><th>Risk</th><th>Actions</th></tr></thead><tbody>{filteredTasks.map((task) => <tr key={task.id} className="border-b border-slate-100"><td className="py-3 font-semibold">{task.id}</td><td>{task.name}<br /><span className="text-xs text-slate-500">{task.module} • {task.workType}</span></td><td>{memberName(task.assignedTo)}</td><td><span className={`rounded-full px-2 py-1 text-xs ${priorityColor(task.priority)}`}>{task.priority}</span></td><td><select className={`rounded-xl px-2 py-1 text-xs font-semibold outline-none ${statusColor(task.status)}`} value={task.status} onChange={(event) => updateTaskStatus(task.id, event.target.value)}>{safeConfig.statuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></td><td>{task.startDate || "-"}</td><td>{task.dueDate || "-"}</td><td>{remainingFor(task)}h</td><td>{deadlineRisk(task)}</td><td><div className="flex flex-wrap gap-2"><button className="font-semibold text-emerald-700 hover:text-emerald-900" onClick={() => startEditTask(task)}>Edit</button><button className="font-semibold text-red-600 hover:text-red-800" onClick={() => setTasks(tasks.filter((item) => item.id !== task.id))}>Remove</button></div></td></tr>)}</tbody></table></div>
             </Card>
           </div>
         )}
@@ -721,14 +849,47 @@ export default function Home() {
                 </div>
               </Card>
             </div>
-            <Card title="Daily allocation history" subtitle="Latest rows first. Use Edit to correct planned/actual hours or notes.">
+            <Card title="Daily allocation history" subtitle="Filter by single date or date range, then edit the exact row quickly.">
+              <div className="mb-4 grid gap-3 rounded-2xl bg-emerald-50 p-4 sm:grid-cols-4">
+                <Select label="Date filter" value={allocationDateFilter} options={["All", "Single Date", "Date Range"]} onChange={setAllocationDateFilter} />
+                <label className="text-sm font-medium text-slate-700">Start / Date<input type="date" className={inputClass} value={allocationFilterStartDate} onChange={(event) => setAllocationFilterStartDate(event.target.value)} /></label>
+                <label className="text-sm font-medium text-slate-700">End date<input type="date" className={inputClass} value={allocationFilterEndDate} disabled={allocationDateFilter === "Single Date"} onChange={(event) => setAllocationFilterEndDate(event.target.value)} /></label>
+                <div className="flex items-end"><p className="text-sm text-slate-600">Showing <strong>{dailyFilteredAllocations.length}</strong> rows</p></div>
+              </div>
               <div className="table-scroll">
                 <table className="w-full min-w-[940px] text-left text-sm">
                   <thead><tr className="border-b text-slate-500"><th className="py-3 pr-4">Date</th><th className="pr-4">Member</th><th className="pr-4">Task</th><th className="pr-4">Planned</th><th className="pr-4">Actual</th><th className="pr-4">Variance</th><th className="pr-4">Note</th><th className="pr-4">Actions</th></tr></thead>
-                  <tbody>{allocations.map((item) => {
-                    const variance = item.actualHours === undefined ? "Not Updated" : `${item.actualHours - item.plannedHours}h`;
+                  <tbody>{dailyFilteredAllocations.map((item) => {
+                    const variance = allocationVariance(item);
                     return <tr key={item.id} className="border-b border-slate-100"><td className="py-3 pr-4 text-slate-700">{item.date}</td><td className="pr-4 text-slate-700">{memberName(item.memberId)}</td><td className="pr-4 text-slate-700">{taskName(item.taskId)}</td><td className="pr-4 text-slate-700">{item.plannedHours}h</td><td className="pr-4 text-slate-700">{item.actualHours === undefined ? "-" : `${item.actualHours}h`}</td><td className="pr-4 text-slate-700">{variance}</td><td className="pr-4 text-slate-700">{item.note || "-"}</td><td className="pr-4"><div className="flex flex-wrap gap-2"><button className="font-semibold text-emerald-700 hover:text-emerald-900" onClick={() => startEditAllocation(item)}>Edit</button><button className="font-semibold text-red-600 hover:text-red-800" onClick={() => removeAllocation(item.id)}>Remove</button></div></td></tr>;
                   })}</tbody>
+                </table>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {tab === "History" && (
+          <div className="space-y-5">
+            <Card title="History" subtitle="Default view is all-time history sorted by latest date first. Filter by period, custom range, or QA member.">
+              <div className="grid gap-3 rounded-2xl bg-emerald-50 p-4 sm:grid-cols-5">
+                <Select label="Period" value={historyPeriod} options={["All Time", "Today", "Last 7 Days", "Last 30 Days", "Custom"]} onChange={setHistoryPeriod} />
+                <Select label="Member" value={historyMemberFilter} options={["All", ...members.map((member) => member.id)]} optionLabel={(id) => id === "All" ? "All members" : memberName(id)} onChange={setHistoryMemberFilter} />
+                <label className="text-sm font-medium text-slate-700">Start date<input type="date" className={inputClass} value={historyStartDate} disabled={historyPeriod !== "Custom"} onChange={(event) => setHistoryStartDate(event.target.value)} /></label>
+                <label className="text-sm font-medium text-slate-700">End date<input type="date" className={inputClass} value={historyEndDate} disabled={historyPeriod !== "Custom"} onChange={(event) => setHistoryEndDate(event.target.value)} /></label>
+                <div className="flex items-end"><button className={buttonClass} onClick={exportHistoryCsv}>Export CSV</button></div>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-slate-500">Showing <strong>{historyRows.length}</strong> rows • Date descending order</p>
+                <button className={subtleButtonClass} onClick={() => { setHistoryPeriod("All Time"); setHistoryMemberFilter("All"); }}>Reset filters</button>
+              </div>
+              <div className="table-scroll mt-4">
+                <table className="w-full min-w-[1120px] text-left text-sm">
+                  <thead><tr className="border-b text-slate-500"><th className="py-3 pr-4">Date</th><th className="pr-4">Member</th><th className="pr-4">Task</th><th className="pr-4">Module</th><th className="pr-4">Work Type</th><th className="pr-4">Planned</th><th className="pr-4">Actual</th><th className="pr-4">Variance</th><th className="pr-4">Status</th><th className="pr-4">Note</th></tr></thead>
+                  <tbody>{historyRows.length ? historyRows.map((item) => {
+                    const task = taskById(item.taskId);
+                    return <tr key={item.id} className="border-b border-slate-100"><td className="py-3 pr-4 text-slate-700">{item.date}</td><td className="pr-4 text-slate-700">{memberName(item.memberId)}</td><td className="pr-4 text-slate-700"><strong>{item.taskId}</strong><br /><span className="text-xs text-slate-500">{task?.name ?? taskName(item.taskId)}</span></td><td className="pr-4 text-slate-700">{task?.module ?? "-"}</td><td className="pr-4 text-slate-700">{task?.workType ?? "-"}</td><td className="pr-4 text-slate-700">{item.plannedHours}h</td><td className="pr-4 text-slate-700">{item.actualHours === undefined ? "-" : `${item.actualHours}h`}</td><td className="pr-4 text-slate-700">{allocationVariance(item)}</td><td className="pr-4"><span className={`rounded-full px-2 py-1 text-xs ${statusColor(task?.status ?? "")}`}>{task?.status ?? "-"}</span></td><td className="pr-4 text-slate-700">{item.note || "-"}</td></tr>;
+                  }) : <tr><td className="py-4 text-slate-500" colSpan={10}>No history found for selected filter.</td></tr>}</tbody>
                 </table>
               </div>
             </Card>

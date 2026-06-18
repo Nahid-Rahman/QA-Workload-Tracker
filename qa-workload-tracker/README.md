@@ -71,3 +71,12 @@ The default build command is `npm run build`.
 - Role-based access for QA Lead and QA Members
 - Export report to CSV/PDF
 - PWA install support
+
+## Latest feature update
+
+- Tasks table now shows the task start date.
+- Daily Allocation has single-date and date-range filters.
+- New History menu supports All Time, Today, Last 7 Days, Last 30 Days, Custom date range, and member-wise filtering.
+- History can export the filtered result as CSV.
+- Dashboard includes Lead Attention / Command Center and a copyable Daily Standup Summary.
+- Bulk / repeat allocation supports long-running tasks such as regression testing across multiple days.
