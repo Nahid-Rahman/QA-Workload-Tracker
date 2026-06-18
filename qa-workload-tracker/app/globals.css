@@ -17,4 +17,5 @@ body {
 
 input, select, textarea, button { font: inherit; }
 .card-shadow { box-shadow: 0 16px 45px rgba(15, 77, 37, 0.08); }
-.table-scroll { overflow-x: auto; }
+.table-scroll { width: 100%; max-width: 100%; overflow-x: auto; }
+.table-scroll table { border-collapse: collapse; }

@@ -790,7 +790,7 @@ export default function Home() {
         )}
 
         {tab === "Tasks" && (
-          <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
+          <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
             <Card title={editingTaskId ? "Edit task" : "Add task"} subtitle={editingTaskId ? "Update task details. Existing allocations will continue to follow this task ID." : "Lead can create work items here."}>
               <div className="space-y-3">
                 <label className="text-sm font-medium">Task ID<input className={inputClass} placeholder="Auto if blank, e.g., T-005" value={taskDraft.id} disabled={Boolean(editingTaskId)} onChange={(event) => setTaskDraft({ ...taskDraft, id: event.target.value })} /></label>
@@ -814,13 +814,13 @@ export default function Home() {
                 <div className="max-w-xs flex-1"><Select label="Filter by status" value={taskStatusFilter} options={["All", ...safeConfig.statuses]} onChange={setTaskStatusFilter} /></div>
                 <p className="text-sm text-slate-500">Showing <strong>{filteredTasks.length}</strong> of <strong>{tasks.length}</strong> tasks</p>
               </div>
-              <div className="table-scroll"><table className="w-full min-w-[1260px] text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="py-3">ID</th><th>Task</th><th>Assigned</th><th>Priority</th><th>Status</th><th>Start</th><th>Due</th><th>Remaining</th><th>Risk</th><th>Actions</th></tr></thead><tbody>{filteredTasks.map((task) => <tr key={task.id} className="border-b border-slate-100"><td className="py-3 font-semibold">{task.id}</td><td>{task.name}<br /><span className="text-xs text-slate-500">{task.module} • {task.workType}</span></td><td>{memberName(task.assignedTo)}</td><td><span className={`rounded-full px-2 py-1 text-xs ${priorityColor(task.priority)}`}>{task.priority}</span></td><td><select className={`rounded-xl px-2 py-1 text-xs font-semibold outline-none ${statusColor(task.status)}`} value={task.status} onChange={(event) => updateTaskStatus(task.id, event.target.value)}>{safeConfig.statuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></td><td>{task.startDate || "-"}</td><td>{task.dueDate || "-"}</td><td>{remainingFor(task)}h</td><td>{deadlineRisk(task)}</td><td><div className="flex flex-wrap gap-2"><button className="font-semibold text-emerald-700 hover:text-emerald-900" onClick={() => startEditTask(task)}>Edit</button><button className="font-semibold text-red-600 hover:text-red-800" onClick={() => setTasks(tasks.filter((item) => item.id !== task.id))}>Remove</button></div></td></tr>)}</tbody></table></div>
+              <div className="table-scroll"><table className="w-full min-w-[1260px] whitespace-nowrap text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="py-3 pr-4">ID</th><th className="pr-4">Task</th><th className="pr-4">Assigned</th><th className="pr-4">Priority</th><th className="pr-4">Status</th><th className="pr-4">Start</th><th className="pr-4">Due</th><th className="pr-4">Remaining</th><th className="pr-4">Risk</th><th className="pr-4">Actions</th></tr></thead><tbody>{filteredTasks.map((task) => <tr key={task.id} className="border-b border-slate-100"><td className="py-3 pr-4 font-semibold">{task.id}</td><td className="pr-4">{task.name}<br /><span className="text-xs text-slate-500">{task.module} • {task.workType}</span></td><td className="pr-4">{memberName(task.assignedTo)}</td><td className="pr-4"><span className={`rounded-full px-2 py-1 text-xs ${priorityColor(task.priority)}`}>{task.priority}</span></td><td className="pr-4"><select className={`rounded-xl px-2 py-1 text-xs font-semibold outline-none ${statusColor(task.status)}`} value={task.status} onChange={(event) => updateTaskStatus(task.id, event.target.value)}>{safeConfig.statuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></td><td className="pr-4">{task.startDate || "-"}</td><td className="pr-4">{task.dueDate || "-"}</td><td className="pr-4">{remainingFor(task)}h</td><td className="pr-4">{deadlineRisk(task)}</td><td className="pr-4"><div className="flex flex-wrap gap-2"><button className="font-semibold text-emerald-700 hover:text-emerald-900" onClick={() => startEditTask(task)}>Edit</button><button className="font-semibold text-red-600 hover:text-red-800" onClick={() => setTasks(tasks.filter((item) => item.id !== task.id))}>Remove</button></div></td></tr>)}</tbody></table></div>
             </Card>
           </div>
         )}
 
         {tab === "Daily Allocation" && (
-          <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
+          <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
             <div className="space-y-5">
               <Card title={editingAllocationId ? "Edit daily update" : "Add daily update"} subtitle={editingAllocationId ? "Update planned/actual hours or note for this allocation row." : "Each QA can add planned and actual hours once daily; urgent updates can be added anytime."}>
                 <div className="space-y-3">
@@ -897,7 +897,7 @@ export default function Home() {
         )}
 
         {tab === "Availability" && (
-          <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
+          <div className="grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
             <Card title="Add unavailable / holiday" subtitle="Use member = All for public/company holiday.">
               <div className="space-y-3">
                 <label className="text-sm font-medium">Date<input type="date" className={inputClass} value={unavailableDraft.date} onChange={(event) => setUnavailableDraft({ ...unavailableDraft, date: event.target.value })} /></label>
@@ -915,7 +915,7 @@ export default function Home() {
         )}
 
         {tab === "Urgent Planner" && (
-          <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
+          <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
             <Card title="Urgent task input" subtitle="This suggests impact. It does not automatically change allocation.">
               <div className="space-y-3">
                 <input className={inputClass} value={urgent.name} onChange={(event) => setUrgent({ ...urgent, name: event.target.value })} placeholder="Urgent task name" />
@@ -946,7 +946,7 @@ export default function Home() {
         )}
 
         {tab === "Team" && (
-          <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
+          <div className="grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
             <Card title={editingMemberId ? "Edit team member" : "Add team member"} subtitle={editingMemberId ? "Update name, role, capacity, skill, or active status. Changes reflect in the dashboard immediately." : "For future QA members. Existing members can be edited from the list."}>
               <div className="space-y-3">
                 <input className={inputClass} placeholder="Name" value={memberDraft.name} onChange={(event) => setMemberDraft({ ...memberDraft, name: event.target.value })} />
@@ -1021,7 +1021,7 @@ export default function Home() {
 }
 
 function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
-  return <section className="rounded-3xl bg-white p-5 card-shadow"><div className="mb-4"><h2 className="text-xl font-bold text-slate-900">{title}</h2>{subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}</div>{children}</section>;
+  return <section className="min-w-0 rounded-3xl bg-white p-5 card-shadow"><div className="mb-4"><h2 className="text-xl font-bold text-slate-900">{title}</h2>{subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}</div>{children}</section>;
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {
